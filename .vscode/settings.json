@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "./ma-gym",
+        "./ma-gym/ma_"
+    ]
+}
