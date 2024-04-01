@@ -9,7 +9,7 @@ from ma_gym.envs.traffic_junction import TrafficJunction
 gym.envs.register(
     id='TrafficJunction10-v0',
     entry_point='ma_gym.envs.traffic_junction:TrafficJunction',
-    kwargs={'max_steps': 100}
+    kwargs={'max_steps': 1000}
 )
 
 # Initialize the environment
