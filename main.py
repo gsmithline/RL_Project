@@ -18,6 +18,32 @@ env = gym.make('TrafficJunction10-v1')
 # Reset the environment to start a new episode
 observation = env.reset()
 
+'''
+Policy Initialization Randomly
+'''
+
+def intialize_policy(num_agents, action_space_size):
+    policies = {}
+
+    for agent in range(num_agents):
+        def policy(observation):
+            return np.random.randint(action_space_size)
+        policies[agent] = policy
+
+    return policies
+    
+
+num_agents = env.n_agents
+action_space_size = 2 # GAS or BRAKE
+policies = intialize_policy(num_agents, action_space_size)
+observation = None
+
+for key in policies.keys():
+    print(key, policies[key](observation))
+
+
+
+'''
 
 # Loop through steps until the episode is done
 done = [False] * env.n_agents
@@ -37,4 +63,5 @@ while not all(done):
         env.render()
 
 # Close the environment
+'''
 env.close()
