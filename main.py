@@ -2,21 +2,12 @@ import gym
 import ma_gym  # Ensure ma_gym is imported to register its environments
 import numpy as np
 import random
+import pandas as pd
 from ma_gym.envs.traffic_junction import TrafficJunction  
+from collections import defaultdict
 
-
-# Register the custom environment
-gym.envs.register(
-    id='TrafficJunction10-v0',
-    entry_point='ma_gym.envs.traffic_junction:TrafficJunction',
-    kwargs={'max_steps': 1000}
-)
-
-# Initialize the environment
-env = gym.make('TrafficJunction10-v1')
-
-# Reset the environment to start a new episode
-observation = env.reset()
+#info_df = pd.
+generations = 100
 
 '''
 Policy Initialization Randomly
@@ -24,44 +15,53 @@ Policy Initialization Randomly
 
 def intialize_policy(num_agents, action_space_size):
     policies = {}
-
     for agent in range(num_agents):
-        def policy(observation):
-            return np.random.randint(action_space_size)
-        policies[agent] = policy
-
+        policies[agent] = lambda observation: np.random.randint(action_space_size)
     return policies
+
+
+def simulate_episode(env, policies):
+
+    obv = env.reset()
+    done = [False for _ in range(env.n_agents)]
+
+    cumulative_rewards = [0 for _ in range(env.n_agents)]
+
+    while not all(done):
+        actions = [policies[agent](obv[agent]) for agent in range(env.n_agents)]
+        obv, rewards, done, info = env.step(actions)
+        cumulative_rewards = [cumulative_rewards[i] + rewards[i] for i in range(env.n_agents)]
+
+    return cumulative_rewards
+
+
     
 
-num_agents = env.n_agents
-action_space_size = 2 # GAS or BRAKE
-policies = intialize_policy(num_agents, action_space_size)
-observation = None
+def psro_simulation(env, generations=generations, episodes_per_matchup=10):
+    num_agents = env.n_agents
+    action_space_size = 2 # GAS or BRAKE
+    policies = intialize_policy(num_agents, action_space_size)
 
-for key in policies.keys():
-    print(key, policies[key](observation))
+    #meta game payoffs
+    meta_game_payoffs = defaultdict(lambda: np.zeros((num_agents, action_space_size, action_space_size)))
+
+    for generation in range(generations):
+        print(f"Generation {generation + 1}/{generations}")
+
+        for episode in range(episodes_per_matchup):
+            for agent1 in range(num_agents):
+                for agent2 in range(agent1 + 1, num_agents):
+                    # play the game
+                    cumulative_rewards = simulate_episode(env, policies)
+                    meta_game_payoffs[(agent1, agent2)] += np.array(cumulative_rewards).reshape((num_agents, 1, 1))
+                    meta_game_payoffs[(agent2, agent1)] += np.array(cumulative_rewards).reshape((num_agents, 1, 1))
 
 
-
-'''
-
-# Loop through steps until the episode is done
-done = [False] * env.n_agents
-while not all(done):
-    # Randomly sample actions for each agent
-    #actions = [random.choice([0, 1]) for _ in range(env.n_agents)]
-    
-    actions = [env.action_space.sample()]
-    observation = env.observation_space.sample()
-    #actions = heuristic_action(observation)
-    
-    
-    for action in actions:
-        # Take a step in the environment with the sampled actions
-        observation, rewards, done, info = env.step(action)
-        # Optionally, render the environment's state (if rendering is supported)
-        env.render()
-
-# Close the environment
-'''
+gym.envs.register(
+    id='TrafficJunction10-v0',
+    entry_point='ma_gym.envs.traffic_junction:TrafficJunction',
+    kwargs={'max_steps': 1000}
+)
+env = gym.make('TrafficJunction10-v1')
+psro_simulation(env)
 env.close()
