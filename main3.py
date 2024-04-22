@@ -34,7 +34,7 @@ def create_policy_from_equilibrium(equilibrium, action_space_size):
 
 def psro_simulation(env, generations, episodes_per_matchup):
     num_agents = env.n_agents
-    action_space_size = env.action_space.n  # Assuming uniform action space
+    action_space_size = 2  # Assuming uniform action space
     policies = initialize_policy(num_agents, action_space_size)
 
     meta_game_payoffs = defaultdict(lambda: np.zeros((2, 2)))  # Adjust size as needed
@@ -77,6 +77,11 @@ def run_computed_policies_dqn(env, agents):
         states, rewards, done, _ = env.step(actions)
         print(f'Actions: {actions}, Rewards: {rewards}, Done: {done}')
 
+gym.envs.register(
+    id='TrafficJunction4-v0',
+    entry_point='ma_gym.envs.traffic_junction:TrafficJunction',
+    kwargs={'max_steps': 10}
+)
 env = gym.make('TrafficJunction4-v0')
 agents = psro_simulation(env, 5, 100)  # Simulate 5 generations with 100 episodes per matchup
 run_computed_policies_dqn(env, agents)  # Test the trained DQN agents
