@@ -8,14 +8,15 @@ from collections import defaultdict
 import nashpy as nash
 from dqn import DQNAgent
 import matplotlib.pyplot as plt
+from ppo import PPOAgent
 
 
 info_df = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
 info_df_dqn_training = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
-episodes = 10
-generations = 10
+episodes = 100
+generations = 100
 max_steps = 50
-runs = 15
+runs = 50
 
 
 '''
@@ -79,6 +80,7 @@ def train_agents(env, agents, episodes=5, policies=None):
         total_episode_reward = 0  
         while not all(done):
             actions = []
+            probs = []
             for i in range(env.n_agents):
                 if not done[i]:
                     # Incorporate Nash policies to influence action selection
@@ -86,11 +88,13 @@ def train_agents(env, agents, episodes=5, policies=None):
                     nash_probabilities = policies[i](states[i]) if policies and i in policies else [0.5, 0.5]
                     print(f"Agent {i} Nash Probabilities: {nash_probabilities}")    
                     print(f"Agent {i} Acting")
-                    action = agents[i].act(states[i], nash_probabilities)
+                    action, probilites= agents[i].act(states[i], nash_probabilities)
                     print(f"Agent {i} Action: {action}")
                     actions.append(action)
+                    probs.append(probilites)
                 else:
-                    actions.append(None)  # or some default no-op action if the agent is done
+                    actions.append(None) 
+                    probs.append([None, None])
 
             # Execute actions in the environment
             for i in range(len(actions)):
@@ -108,7 +112,7 @@ def train_agents(env, agents, episodes=5, policies=None):
             for i in range(env.n_agents):
                 if not done[i]:
                     print(f"Agent {i} Remembering")
-                    agents[i].remember(states[i], actions[i], rewards[i], next_states[i], done[i], direction[i], next_pos[i])
+                    agents[i].remember(states[i], actions[i], probs[i], rewards[i], next_states[i], done[i], direction[i], next_pos[i])
                     print(f"Agent {i} Replaying")
                     agents[i].replay()
             print(f"Done: {done}")
@@ -132,7 +136,7 @@ def create_policy_from_equilibrium(equilibrium, action_space_size):
 def psro_simulation(env, generations, episodes_per_matchup, flag):
     num_agents = env.n_agents
     action_space_size = 2
-    agent_holder= [DQNAgent(81, action_space_size) for _ in range(num_agents)] 
+    agent_holder= [PPOAgent(81, action_space_size) for _ in range(num_agents)] 
     agents = {}
     total_rewards = []
     for id in range(num_agents):
@@ -183,8 +187,10 @@ def psro_simulation(env, generations, episodes_per_matchup, flag):
         plt.show()
 
             #plot losses
+        '''
         for agent in agents: #plot loss of each agent
             agents[agent].plot_losses()
+        '''
 
         return agents
  
@@ -205,9 +211,12 @@ def run_computed_policies_dqn(env, agents, runs):
         observations = env.reset()
         done = [False] * env.n_agents
         while not all(done):
-            actions = [agents[i].act(observations[i]) for i in range(env.n_agents)]
+            actions = [agents[i].act_simple(observations[i]) for i in range(env.n_agents)]
             observations, rewards, done, _, direction, pos = env.step(actions)
             print(f'Actions: {actions}, Observations: {observations}, Rewards: {rewards}, Done: {done}, Direction: {direction}, Position: {pos}')
+            if all(done):
+                print(f"Episode {i} done")
+                env.render()
             env.render()
 
         
@@ -218,9 +227,9 @@ gym.envs.register(
     kwargs={'max_steps': max_steps}
 )
 env = gym.make('TrafficJunction4-v0')
-agents = psro_simulation(env, generations, 4, "Nash")
+agents = psro_simulation(env, generations, 5, "Nash")
 print("Running Computed Policies")
-run_computed_policies_dqn(env, agents, 15) #nash 
+run_computed_policies_dqn(env, agents, 100) #nash 
 
 
 
