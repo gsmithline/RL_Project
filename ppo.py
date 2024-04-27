@@ -10,7 +10,7 @@ from tensorflow.python.framework.ops import disable_eager_execution
 
 disable_eager_execution()
 class PPOAgent:
-    def __init__(self, state_size, action_size=2, gamma=0.99, clip_ratio=0.2, batch_size=64, actor_lr=0.001, critic_lr=0.001):
+    def __init__(self, state_size, action_size=2, gamma=0.99, clip_ratio=0.2, batch_size=62, actor_lr=0.001, critic_lr=0.001):
         self.state_size = state_size
         self.action_size = action_size
         self.gamma = gamma
@@ -21,6 +21,8 @@ class PPOAgent:
         self.memory = []  # Memory to store trajectories for updating
         self.losses = []  # To store losses for plotting 
         self.epsilon = 0.01 
+        self.total_rewards = []
+        self.reward = 0
         
     def build_actor(self, learning_rate):
         input = Input(shape=(self.state_size,))
@@ -54,9 +56,14 @@ class PPOAgent:
         return loss
     
     def remember(self, state, action, prob, reward, next_state, done, direction, pos):
+        state = state[0:81]
+        self.reward = reward
+        self.total_rewards.append(reward)
         self.memory.append([state, action, prob, reward, next_state, done, direction, pos])
     
     def act(self, state, nash_prob):
+        if len(state) > 81:
+            state = state[0:81]
         rand = np.random.rand()
         if rand <= self.epsilon:
             print("Random action")
@@ -85,10 +92,12 @@ class PPOAgent:
 
         # Convert to numpy arrays and ensure all are correctly shaped
         states = np.array(states)
+        states = np.array([state[0:81] for state in states])
         actions = np.array(actions)
         old_probs = np.array(old_probs)
         rewards = np.array(rewards)
         next_states = np.array(next_states)
+        next_states = np.array([state[0:81] for state in next_states])
         dones = np.array(dones)
 
         # Ensure old_probs is correctly shaped

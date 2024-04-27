@@ -13,10 +13,10 @@ from ppo import PPOAgent
 
 info_df = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
 info_df_dqn_training = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
-episodes = 100
-generations = 100
+episodes = 10
+generations = 5
 max_steps = 50
-runs = 50
+runs = 5
 
 
 '''
@@ -96,7 +96,6 @@ def train_agents(env, agents, episodes=5, policies=None):
                     actions.append(None) 
                     probs.append([None, None])
 
-            # Execute actions in the environment
             for i in range(len(actions)):
                 if actions[i] is None:
                     actions[i] = 0  #this happens once the agent has made it to its destination so it should stop, has no need to move.
@@ -108,7 +107,6 @@ def train_agents(env, agents, episodes=5, policies=None):
             for i in range(len(rewards)):
                 print(f"Reward {agents[i]}: {rewards[i]}")
 
-            # Store experiences and train
             for i in range(env.n_agents):
                 if not done[i]:
                     print(f"Agent {i} Remembering")
@@ -122,6 +120,8 @@ def train_agents(env, agents, episodes=5, policies=None):
                 break
     
     return episode_rewards
+
+def visualize_norm_violations(violations):
 
 
 def create_policy_from_equilibrium(equilibrium, action_space_size):
@@ -186,13 +186,12 @@ def psro_simulation(env, generations, episodes_per_matchup, flag):
         plt.ylabel("Reward")
         plt.show()
 
-            #plot losses
         '''
         for agent in agents: #plot loss of each agent
             agents[agent].plot_losses()
         '''
 
-        return agents
+        return agents, total_rewards, episode_rewards
  
 def run_computed_policies(env, policies):
     observations = env.reset()
@@ -206,31 +205,83 @@ def run_computed_policies(env, policies):
         print(f'Actions: {actions}, Observations: {observations}, Rewards: {rewards}, Done: {done}')
     #info_df.to_csv('info.csv')
 
-def run_computed_policies_dqn(env, agents, runs):
+def run_computed_policies_dqn(env, agents, runs, view = False):
+    rewards_avg_round = []
+
     for i in range(runs):
         observations = env.reset()
         done = [False] * env.n_agents
+        steps = 0
         while not all(done):
+            steps += 1
             actions = [agents[i].act_simple(observations[i]) for i in range(env.n_agents)]
             observations, rewards, done, _, direction, pos = env.step(actions)
+            rewards_avg_round.append(sum(rewards)/env.n_agents)
             print(f'Actions: {actions}, Observations: {observations}, Rewards: {rewards}, Done: {done}, Direction: {direction}, Position: {pos}')
             if all(done):
                 print(f"Episode {i} done")
+            
+            if view:
                 env.render()
-            env.render()
+        if steps < max_steps:
+            print(f"Episode {i} done")
+            print(f"Total steps: {steps}")
 
-        
+    #plot rewards
+    plt.plot(rewards_avg_round)
+    plt.title("Rewards") 
+    plt.xlabel("Episode")
+    plt.ylabel("Reward")
+    plt.show()
 
-gym.envs.register(
+
+def simulation_10_agents(seed=42, view = False):
+    np.random.seed(seed)
+    gym.envs.register(
+    id='TrafficJunction10-v0',
+    entry_point='ma_gym.envs.traffic_junction:TrafficJunction',
+    kwargs={'max_steps': max_steps}
+    )
+    env = gym.make('TrafficJunction10-v0')
+    agents = psro_simulation(env, generations, 5, "Nash")
+    print("Running Computed Policies")
+    run_computed_policies_dqn(env, agents, 10, view) #nash 
+    env.close()
+
+def simulation_4_agents(seed=42, view = False):
+    np.random.seed(seed)
+    gym.envs.register(
     id='TrafficJunction4-v0',
     entry_point='ma_gym.envs.traffic_junction:TrafficJunction',
     kwargs={'max_steps': max_steps}
-)
-env = gym.make('TrafficJunction4-v0')
-agents = psro_simulation(env, generations, 5, "Nash")
-print("Running Computed Policies")
-run_computed_policies_dqn(env, agents, 100) #nash 
+    )
+    env = gym.make('TrafficJunction4-v0')
+    agents = psro_simulation(env, generations, 5, "Nash")
+    print("Running Computed Policies")
+    run_computed_policies_dqn(env, agents, 100, view) #nash 
+    env.close()
 
 
-
-env.close()
+def simulation_10_to_4_agents(seed=42, view = False):
+    np.random.seed(seed)
+    gym.envs.register(
+    id='TrafficJunction4-v0',
+    entry_point='ma_gym.envs.traffic_junction:TrafficJunction',
+    kwargs={'max_steps': max_steps}
+    )
+    env = gym.make('TrafficJunction10-v0')
+    agents = psro_simulation(env, generations, 5, "Nash")
+    print("Running Computed Policies")
+    env = gym.make('TrafficJunction4-v0')
+    new_agents = {}
+    #sort agents by agent.total_rewards averge
+    agents = {k: v for k, v in sorted(agents.items(), key=lambda item: np.mean(item[1].total_rewards), reverse=True)}
+    counter = 0
+    for key, value in agents.items():
+        if counter < 4:
+            new_agents[counter] = value
+            counter += 1
+        else:
+            break
+    run_computed_policies_dqn(env, new_agents, 100, view) #nash 
+    env.close()
