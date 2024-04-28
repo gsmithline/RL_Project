@@ -10,7 +10,7 @@ from tensorflow.python.framework.ops import disable_eager_execution
 
 disable_eager_execution()
 class PPOAgent:
-    def __init__(self, state_size, action_size=2, gamma=0.99, clip_ratio=0.2, batch_size=62, actor_lr=0.001, critic_lr=0.001):
+    def __init__(self, state_size, action_size=2, gamma=0.99, clip_ratio=0.2, batch_size=62, actor_lr=0.001, critic_lr=0.001, seed=42):
         self.state_size = state_size
         self.action_size = action_size
         self.gamma = gamma
@@ -23,6 +23,8 @@ class PPOAgent:
         self.epsilon = 0.01 
         self.total_rewards = []
         self.reward = 0
+        self.seed = seed
+        np.random.seed(self.seed)
         
     def build_actor(self, learning_rate):
         input = Input(shape=(self.state_size,))
