@@ -7,8 +7,11 @@ from collections import deque
 import random
 import matplotlib.pyplot as plt
 from tensorflow.python.framework.ops import disable_eager_execution
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 
 disable_eager_execution()
+
 class PPOAgent:
     def __init__(self, state_size, action_size=2, gamma=0.99, clip_ratio=0.2, batch_size=62, actor_lr=0.001, critic_lr=0.001, seed=42):
         self.state_size = state_size
@@ -68,7 +71,6 @@ class PPOAgent:
             state = state[0:81]
         rand = np.random.rand()
         if rand <= self.epsilon:
-            print("Random action")
 
             return np.random.choice(self.action_size), [rand, 1-rand]
         else: 
@@ -78,7 +80,10 @@ class PPOAgent:
             #action = np.random.choice(self.action_size, p=probabilities[0])
             action = np.argmax(probabilities[0])
             return action, probabilities[0]
+        
     def act_simple(self, state):
+        if len(state) > 81:
+            state = state[0:81]
         state = state.reshape(1, self.state_size)
         probabilities = self.actor.predict([state, np.zeros((1, 1)), np.zeros((1, self.action_size))])
         action = np.argmax(probabilities[0])
@@ -86,7 +91,6 @@ class PPOAgent:
     
     def replay(self):
         if len(self.memory) < self.batch_size:
-            print("Not enough samples in memory to perform training")
             return
 
         batch = random.sample(self.memory, self.batch_size)
