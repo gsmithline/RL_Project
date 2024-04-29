@@ -12,10 +12,10 @@ import matplotlib.pyplot as plt
 
 info_df = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
 info_df_dqn_training = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
-episodes = 10
-generations = 10
-max_steps = 50
-runs = 15
+episodes = 2
+generations = 2
+max_steps = 10
+runs = 2
 
 
 '''
