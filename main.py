@@ -13,10 +13,10 @@ from ppo import PPOAgent
 
 info_df = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
 info_df_dqn_training = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
-episodes = 2
-generations = 2
-max_steps = 10
-runs = 2
+episodes = 10
+generations = 10
+max_steps = 50
+runs = 10
 
 
 '''
@@ -106,7 +106,7 @@ def train_agents(env, agents, episodes=2, policies=None, info_df=info_df, seed=4
             states = next_states
             steps += 1
             if all(done):
-                avg_reward.append(sum(episode_rewards)/steps)
+                avg_reward.append(sum(episode_rewards)/steps/env.n_agents)
                 break
 
 
