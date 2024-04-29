@@ -13,8 +13,8 @@ from ppo import PPOAgent
 
 info_df = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
 info_df_dqn_training = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
-episodes = 5
-generations = 3
+episodes = 2
+generations = 2
 max_steps = 10
 runs = 2
 
@@ -22,7 +22,6 @@ runs = 2
 '''
 Policy Initialization Randomly
 '''
-
 def initialize_policy(num_agents, action_space_size):
     return {agent: lambda obs, size=action_space_size: np.random.randint(size) for agent in range(num_agents)}
 
@@ -43,36 +42,23 @@ def simulate_episode(env, policies, generation):
 
     return cumulative_rewards
 
-def simulate_episode_dqn(env, agents):
-    states = env.reset()
-    done = [False] * env.n_agents
-    cumulative_rewards = [0] * env.n_agents
-    while not all(done):
-        actions = [agents[i].act(states[i]) for i in range(env.n_agents)]
-        next_states, rewards, done, _ = env.step(actions)
-        for i in range(env.n_agents):
-            cumulative_rewards[i] += rewards[i]
-        states = next_states
-    return cumulative_rewards
 
-def compute_nash_equilibrium(meta_game_payoffs): #iterative method
+def compute_nash_equilibrium(meta_game_payoffs):
     equilibrium_policies = {}
     for match, payoff_matrix in meta_game_payoffs.items():
         game = nash.Game(payoff_matrix[0], payoff_matrix[1])
         try:
-            #if payoff_matrix[0] == payoff_matrix[1]:
-                #eq = game.lemke_howson(initial_dropped_label=1)
             eq = game.lemke_howson(initial_dropped_label=0)
             equilibrium_policies[match] = [eq]
         except Exception as e:
             print(f"Failed to find Nash Equilibrium for match {match} using Lemke-Howson: {e}")
-            # Fallback to support enumeration or other methods if Lemke-Howson fails
             eqs = list(game.support_enumeration())
             equilibrium_policies[match] = eqs
     return equilibrium_policies
 
-def train_agents(env, agents, episodes=5, policies=None, info_df=info_df, seed=42):
+def train_agents(env, agents, episodes=2, policies=None, info_df=info_df, seed=42):
     episode_rewards = []
+    avg_reward = []
     for episode in range(episodes):
         print(f"Episode {episode + 1}/{episodes}")
         step_collisions = 0
@@ -84,7 +70,8 @@ def train_agents(env, agents, episodes=5, policies=None, info_df=info_df, seed=4
 
         states = np.array(env.reset())
         done = [False] * env.n_agents
-        total_episode_reward = 0  
+        total_episode_reward = 0 
+        steps = 0 
         while not all(done):
             actions = []
             probs = []
@@ -110,8 +97,6 @@ def train_agents(env, agents, episodes=5, policies=None, info_df=info_df, seed=4
             unncessary_brake_violations += info['unncessary_brake_violations']
             efficient_crossing_violations += info['efficient_crossing_violations']
             total_violations_cost += info['total_violations_cost']
-            #add info to dataframe
-            #info_df.loc[len(info_df)] = [seed, info['step_collisions'], info['not_on_track'], info['yield_violations'], info['unncessary_brake_violations'], info['efficient_crossing_violations'], info['total_violations_cost']]
             total_episode_reward += sum(rewards)
             episode_rewards.append(total_episode_reward)
             for i in range(env.n_agents):
@@ -119,43 +104,17 @@ def train_agents(env, agents, episodes=5, policies=None, info_df=info_df, seed=4
                     agents[i].remember(states[i], actions[i], probs[i], rewards[i], next_states[i], done[i], direction[i], next_pos[i])
                     agents[i].replay()
             states = next_states
-
+            steps += 1
             if all(done):
+                avg_reward.append(sum(episode_rewards)/steps)
                 break
+
 
     info_df.loc[len(info_df)] = [seed, step_collisions, not_on_track, yield_violations, 
                                     unncessary_brake_violations, efficient_crossing_violations, total_violations_cost]
     
-    return episode_rewards, info_df
-'''
-def visualize_norm_violations(violations):
+    return avg_reward, info_df
 
-    
-    columns=['seed', 'step_collisions', 'not_on_track', 'yield_violations', 
-                                          'unncessary_brake_violations', 
-                                          'efficient_crossing_violations', 'total_violations_cost']
-
-    for column in columns:
-        if column == 'seed':
-            continue
-        plt.plot(violations[column], label=column)
-        plt.title(f"{column} Violations")
-        plt.xlabel("Generation")
-        plt.ylabel("Violations")
-        plt.show()
-
-    data = [violations[column] for column in columns if column not in ["seed", "total_violations_cost"]]
-    
-
-    plt.hist(data, bins=range(len(violations)), stacked=True, label=columns)
-    plt.title("Total Norm Violations")
-    plt.xlabel("Generation")
-    plt.ylabel("Violations")
-    plt.legend()
-    plt.show()
-    
-'''
-    
 
 
 def create_policy_from_equilibrium(equilibrium, action_space_size):
@@ -172,7 +131,10 @@ def psro_simulation(env, generations, episodes_per_matchup, flag, seed=42, info_
     action_space_size = 2
     agent_holder= [PPOAgent(81, action_space_size, seed) for _ in range(num_agents)] 
     agents = {}
-    total_rewards = []
+    avg_episode_rewards = []
+    avg_info_df = pd.DataFrame(columns=['seed', 'step_collisions', 'not_on_track', 'yield_violations', 
+                                          'unncessary_brake_violations', 
+                                          'efficient_crossing_violations', 'total_violations_cost'])
     for id in range(num_agents):
         agents[id] = agent_holder[id]
     meta_game_payoffs = defaultdict(lambda: np.zeros((num_agents, action_space_size, action_space_size)))
@@ -203,22 +165,18 @@ def psro_simulation(env, generations, episodes_per_matchup, flag, seed=42, info_
             
             #train agents
             episode_rewards, info_df = train_agents(env, agents, episodes_per_matchup, policies, info_training, seed)
-            #plot episode rewards
-            for reward in episode_rewards:  
-                total_rewards.append(reward)
+            if generation+1 == 1:
+                avg_episode_rewards = episode_rewards
+            else:
+                avg_episode_rewards = [sum(x) / 2 for x in zip(avg_episode_rewards, episode_rewards)] 
+            #avg training violations for each generation episode
+            avg_info_df.loc[len(avg_info_df)] = info_df.mean()
+
+           
         #plot total rewards
 
-        return agents, total_rewards, episode_rewards, info_df
- 
-def run_computed_policies(env, policies):
-    observations = env.reset()
-    done = [False] * env.n_agents
-    while not all(done):
-        actions = [policies[agent](observations[agent]) for agent in range(env.n_agents)]
-        observations, rewards, done, info = env.step(actions)
-        # Ensure that each entry is recorded per step for all agents
-        info_df.loc[len(info_df)] = [actions, list(observations), dict(info), list(rewards), list(done)]
-        env.render()
+        return agents, avg_episode_rewards, info_df
+
 
 def run_computed_policies_dqn(env, agents, runs, view = False, seed=42):
     rewards_avg_round = []
@@ -275,12 +233,12 @@ def simulation_10_agents(seed=42, view = False):
     kwargs={'max_steps': max_steps}
     )
     env = gym.make('TrafficJunction10-v0')
-    agents, training_total_rewards, training_episode_rewards, training_norm_violations = psro_simulation(env, generations, 5, "Nash", seed, info_training)
+    agents, avg_rewards_training, avg_training_norm_violations = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
     print("Running Computed Policies")
     sim_violated, at_dest = run_computed_policies_dqn(env, agents, 10, view) #nash 
 
     env.close()
-    return training_total_rewards, training_episode_rewards, training_norm_violations, sim_violated, at_dest
+    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest
 
 
 def simulation_4_agents(seed=42, view = False):
@@ -294,12 +252,12 @@ def simulation_4_agents(seed=42, view = False):
     kwargs={'max_steps': max_steps}
     )
     env = gym.make('TrafficJunction4-v0')
-    agents, training_total_rewards, training_episode_rewards, training_norm_violations = psro_simulation(env, generations, 5, "Nash", seed, info_training)
+    agents, avg_rewards_training, avg_training_norm_violations = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
     print("Running Computed Policies")
     sim_violated, at_dest = run_computed_policies_dqn(env, agents, 10, view) #nash 
 
     env.close()
-    return training_total_rewards, training_episode_rewards, training_norm_violations, sim_violated, at_dest
+    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest
 
 
 
@@ -314,7 +272,7 @@ def simulation_10_to_4_agents(seed=42, view = False):
     kwargs={'max_steps': max_steps}
     )
     env = gym.make('TrafficJunction10-v0')
-    agents, training_total_rewards, training_episode_rewards, training_norm_violations = psro_simulation(env, generations, 5, "Nash", seed, info_training)
+    agents, avg_rewards_training, avg_training_norm_violations = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
     
     env.close()
     print("Running Computed Policies")
@@ -332,6 +290,27 @@ def simulation_10_to_4_agents(seed=42, view = False):
     sim_violated, at_dest = run_computed_policies_dqn(env, new_agents, 10, view) #nash 
     print(sim_violated)
     env.close()
-    return training_total_rewards, training_episode_rewards, training_norm_violations, sim_violated, at_dest
+    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest
 
+'''
+avg_training_rewards_f, avg_training_norm_violations_f, sim_violated_f, at_dest_f = None, None, None, None
+for seed in [0, 42]:
+    avg_training_rewards, avg_training_norm_violations, sim_violated, at_dest = simulation_10_agents(seed, False)
+    if seed == 0:
+        avg_training_rewards_f = avg_training_rewards
+        avg_training_norm_violations_f = avg_training_norm_violations
+        sim_violated_f = sim_violated
+        at_dest_f = at_dest
+    else:
+        avg_training_rewards_f = [sum(x) / 2 for x in zip(avg_training_rewards_f, avg_training_rewards)]
+
+        avg_training_norm_violations_f = avg_training_norm_violations_f.add(avg_training_norm_violations).div(2)
+        sim_violated_f = sim_violated_f.add(sim_violated).div(2)
+        at_dest_f = [sum(x) / 2 for x in zip(at_dest_f, at_dest)]
+
+print(avg_training_rewards_f)
+print(avg_training_norm_violations_f)
+print(sim_violated_f)
+print(at_dest_f)
+'''
 
