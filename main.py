@@ -13,6 +13,7 @@ from ppo import PPOAgent
 
 info_df = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
 info_df_dqn_training = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
+
 episodes = 50
 generations = 300
 max_steps = 50
@@ -21,6 +22,8 @@ runs = 10
 first_gen = 1
 last_gen = generations
 middle_gen = int(generations/2)
+
+
 
 
 '''
