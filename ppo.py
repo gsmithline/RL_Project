@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.layers import Input, Dense, Flatten
 from tensorflow.keras.optimizers import Adam
 from collections import deque
 import random
@@ -32,6 +32,7 @@ class PPOAgent:
     def build_actor(self, learning_rate):
         input = Input(shape=(self.state_size,))
         advantages = Input(shape=(1,))
+        Flatten()(input)
         old_prb = Input(shape=(self.action_size,))
 
         x = Dense(24, activation='relu')(input)
@@ -44,6 +45,8 @@ class PPOAgent:
     
     def build_critic(self, learning_rate):
         input = Input(shape=(self.state_size,))
+        Flatten()(input)
+
         x = Dense(24, activation='relu')(input)
         x = Dense(24, activation='relu')(x)
         value = Dense(1)(x)
@@ -123,11 +126,11 @@ class PPOAgent:
         actions_one_hot = tf.keras.utils.to_categorical(actions, num_classes=self.action_size)
 
         # Train the actor model
-        actor_history = self.actor.fit([states, advantages, old_probs], actions_one_hot, batch_size=self.batch_size, verbose=0)
+        actor_history = self.actor.fit([states, advantages, old_probs], actions_one_hot, batch_size=self.batch_size, verbose=2)
         actor_loss = self.ppo_loss(advantages, old_probs)
         self.losses.append(actor_loss)
 
-        critic_history = self.critic.fit(states, targets, batch_size=self.batch_size, verbose=0)
+        critic_history = self.critic.fit(states, targets, batch_size=self.batch_size, verbose=2)
         critic_loss = self.ppo_loss(targets, values)
         self.losses.append(critic_loss)
         # Clear memory

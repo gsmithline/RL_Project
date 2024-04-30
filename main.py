@@ -13,10 +13,14 @@ from ppo import PPOAgent
 
 info_df = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
 info_df_dqn_training = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
-episodes = 10
-generations = 10
+episodes = 50
+generations = 300
 max_steps = 50
 runs = 10
+
+first_gen = 1
+last_gen = generations
+middle_gen = int(generations/2)
 
 
 '''
@@ -127,6 +131,9 @@ def create_policy_from_equilibrium(equilibrium, action_space_size):
 
 
 def psro_simulation(env, generations, episodes_per_matchup, flag, seed=42, info_training=None):
+    first_gen_results = []
+    middle_gen_results = []
+    last_gen_results = []
     num_agents = env.n_agents
     action_space_size = 2
     agent_holder= [PPOAgent(81, action_space_size, seed) for _ in range(num_agents)] 
@@ -165,17 +172,23 @@ def psro_simulation(env, generations, episodes_per_matchup, flag, seed=42, info_
             
             #train agents
             episode_rewards, info_df = train_agents(env, agents, episodes_per_matchup, policies, info_training, seed)
-            if generation+1 == 1:
+            if generation+1 == first_gen:
+                first_gen_results.append((episode_rewards, info_df))    
                 avg_episode_rewards = episode_rewards
             else:
+
                 avg_episode_rewards = [sum(x) / 2 for x in zip(avg_episode_rewards, episode_rewards)] 
+                if generation+1 == middle_gen:
+                    middle_gen_results.append((episode_rewards, info_df))
+                if generation+1 == last_gen:
+                    last_gen_results.append((episode_rewards, info_df))
             #avg training violations for each generation episode
             avg_info_df.loc[len(avg_info_df)] = info_df.mean()
 
            
         #plot total rewards
 
-        return agents, avg_episode_rewards, info_df
+        return agents, avg_episode_rewards, info_df, first_gen_results, middle_gen_results, last_gen_results
 
 
 def run_computed_policies_dqn(env, agents, runs, view = False, seed=42):
@@ -233,12 +246,12 @@ def simulation_10_agents(seed=42, view = False):
     kwargs={'max_steps': max_steps}
     )
     env = gym.make('TrafficJunction10-v0')
-    agents, avg_rewards_training, avg_training_norm_violations = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
+    agents, avg_rewards_training, avg_training_norm_violations, first_gen_results, middle_gen_results, last_gen_results = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
     print("Running Computed Policies")
     sim_violated, at_dest = run_computed_policies_dqn(env, agents, 10, view) #nash 
 
     env.close()
-    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest
+    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results
 
 
 def simulation_4_agents(seed=42, view = False):
@@ -252,12 +265,12 @@ def simulation_4_agents(seed=42, view = False):
     kwargs={'max_steps': max_steps}
     )
     env = gym.make('TrafficJunction4-v0')
-    agents, avg_rewards_training, avg_training_norm_violations = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
+    agents, avg_rewards_training, avg_training_norm_violations, first_gen_results, middle_gen_results, last_gen_results = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
     print("Running Computed Policies")
     sim_violated, at_dest = run_computed_policies_dqn(env, agents, 10, view) #nash 
 
     env.close()
-    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest
+    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results
 
 
 
@@ -272,7 +285,7 @@ def simulation_10_to_4_agents(seed=42, view = False):
     kwargs={'max_steps': max_steps}
     )
     env = gym.make('TrafficJunction10-v0')
-    agents, avg_rewards_training, avg_training_norm_violations = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
+    agents, avg_rewards_training, avg_training_norm_violations, first_gen_results, middle_gen_results, last_gen_results= psro_simulation(env, generations, episodes, "Nash", seed, info_training)
     
     env.close()
     print("Running Computed Policies")
@@ -290,12 +303,12 @@ def simulation_10_to_4_agents(seed=42, view = False):
     sim_violated, at_dest = run_computed_policies_dqn(env, new_agents, 10, view) #nash 
     print(sim_violated)
     env.close()
-    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest
+    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results
 
 '''
 avg_training_rewards_f, avg_training_norm_violations_f, sim_violated_f, at_dest_f = None, None, None, None
 for seed in [0, 42]:
-    avg_training_rewards, avg_training_norm_violations, sim_violated, at_dest = simulation_10_agents(seed, False)
+    avg_training_rewards, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results = simulation_4_agents(seed, False)
     if seed == 0:
         avg_training_rewards_f = avg_training_rewards
         avg_training_norm_violations_f = avg_training_norm_violations
