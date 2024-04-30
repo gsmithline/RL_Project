@@ -15,7 +15,7 @@ info_df = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewar
 info_df_dqn_training = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
 
 episodes = 50
-generations = 300
+generations = 100
 max_steps = 50
 runs = 10
 
