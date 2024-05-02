@@ -1,144 +1,119 @@
-import tensorflow as tf
+import torch
+import torch.nn as nn
+import torch.optim as optim
 import numpy as np
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Dense, Flatten
-from tensorflow.keras.optimizers import Adam
 from collections import deque
 import random
 import matplotlib.pyplot as plt
-from tensorflow.python.framework.ops import disable_eager_execution
-import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 
-disable_eager_execution()
+class Actor(nn.Module):
+    def __init__(self, state_size, action_size):
+        super(Actor, self).__init__()
+        self.fc1 = nn.Linear(state_size, 24)
+        self.fc2 = nn.Linear(24, 24)
+        self.output = nn.Linear(24, action_size)
+        self.softmax = nn.Softmax(dim=-1)
+
+
+    def forward(self, x, advantages, old_probs):
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        probs = self.softmax(self.output(x))
+        return probs
+
+class Critic(nn.Module):
+    def __init__(self, state_size):
+        super(Critic, self).__init__()
+        self.fc1 = nn.Linear(state_size, 24)
+        self.fc2 = nn.Linear(24, 24)
+        self.output = nn.Linear(24, 1)
+        
+
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        value = self.output(x)
+        return value
 
 class PPOAgent:
-    def __init__(self, state_size, action_size=2, gamma=0.99, clip_ratio=0.2, batch_size=62, actor_lr=0.001, critic_lr=0.001, seed=42):
+    def __init__(self, state_size, action_size=2, gamma=0.99, clip_ratio=0.2, batch_size=40, actor_lr=0.001, critic_lr=0.001, seed=42):
         self.state_size = state_size
         self.action_size = action_size
         self.gamma = gamma
         self.clip_ratio = clip_ratio
         self.batch_size = batch_size
-        self.actor = self.build_actor(actor_lr)
-        self.critic = self.build_critic(critic_lr)
-        self.memory = []  # Memory to store trajectories for updating
-        self.losses = []  # To store losses for plotting 
-        self.epsilon = 0.01 
+        self.actor = Actor(state_size, action_size)
+        self.critic = Critic(state_size)
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_lr)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=critic_lr)
+        self.memory = []
+        self.losses = []
+        self.epsilon = 0.01
         self.total_rewards = []
         self.reward = 0
-        self.seed = seed
-        np.random.seed(self.seed)
-        
-    def build_actor(self, learning_rate):
-        input = Input(shape=(self.state_size,))
-        advantages = Input(shape=(1,))
-        Flatten()(input)
-        old_prb = Input(shape=(self.action_size,))
+        np.random.seed(seed)
+        torch.manual_seed(seed)
 
-        x = Dense(24, activation='relu')(input)
-        x = Dense(24, activation='relu')(x)
-        probs = Dense(self.action_size, activation='softmax')(x)
+    def ppo_loss(self, probs, actions, advantages, old_probs):
+        m = probs.gather(1, actions.unsqueeze(1))
+        old_m = old_probs.gather(1, actions.unsqueeze(1))
+        ratio = torch.exp(torch.log(m) - torch.log(old_m))
+        surr1 = ratio * advantages
+        surr2 = torch.clamp(ratio, 1-self.clip_ratio, 1+self.clip_ratio) * advantages
+        return -torch.min(surr1, surr2).mean()
 
-        model = Model(inputs=[input, advantages, old_prb], outputs=[probs])
-        model.compile(optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=learning_rate), loss=self.ppo_loss(advantages, old_prb))
-        return model
-    
-    def build_critic(self, learning_rate):
-        input = Input(shape=(self.state_size,))
-        Flatten()(input)
-
-        x = Dense(24, activation='relu')(input)
-        x = Dense(24, activation='relu')(x)
-        value = Dense(1)(x)
-
-        model = Model(inputs=[input], outputs=[value])
-        model.compile(optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=learning_rate), loss='mse')
-        return model
-    
-    def ppo_loss(self, advantages, old_prb):
-        def loss(y_true, y_pred):
-            prob_ratio = tf.reduce_sum(y_true * y_pred, axis=1) / tf.reduce_sum(old_prb * y_true, axis=1)
-            clipped = tf.clip_by_value(prob_ratio, 1-self.clip_ratio, 1+self.clip_ratio)
-            return -tf.reduce_mean(tf.minimum(prob_ratio * advantages, clipped * advantages))
-        
-        return loss
-    
     def remember(self, state, action, prob, reward, next_state, done, direction, pos):
-        state = state[0:81]
-        self.reward = reward
-        self.total_rewards.append(reward)
-        self.memory.append([state, action, prob, reward, next_state, done, direction, pos])
-    
-    def act(self, state, nash_prob):
-        if len(state) > 81:
-            state = state[0:81]
-        rand = np.random.rand()
-        if rand <= self.epsilon:
+        self.memory.append((state[:self.state_size], action, prob, reward, next_state[:self.state_size], done, direction, pos))
 
-            return np.random.choice(self.action_size), [rand, 1-rand]
-        else: 
-            state = state.reshape(1, self.state_size)
-            probabilities = self.actor.predict([state, np.zeros((1, 1)), np.zeros((1, self.action_size))])
-            probabilities = nash_prob * probabilities
-            #action = np.random.choice(self.action_size, p=probabilities[0])
-            action = np.argmax(probabilities[0])
-            return action, probabilities[0]
-        
+    def act(self, state, nash_prob):
+        state = torch.FloatTensor(state[:self.state_size]).unsqueeze(0)
+        with torch.no_grad():
+            probs = self.actor(state, None, None)
+        probabilities = probs.numpy()[0] * nash_prob
+        #action = np.random.choice(self.action_size, p=probabilities)
+        action = np.argmax(probabilities)
+        return action, probabilities
+
     def act_simple(self, state):
-        if len(state) > 81:
-            state = state[0:81]
-        state = state.reshape(1, self.state_size)
-        probabilities = self.actor.predict([state, np.zeros((1, 1)), np.zeros((1, self.action_size))])
-        action = np.argmax(probabilities[0])
+        state = torch.FloatTensor(state[:self.state_size]).unsqueeze(0)
+        with torch.no_grad():
+            probabilities = self.actor(state, None, None)
+        action = probabilities.argmax().item()
         return action
-    
+
     def replay(self):
         if len(self.memory) < self.batch_size:
             return
 
         batch = random.sample(self.memory, self.batch_size)
-        states, actions, old_probs, rewards, next_states, dones, _, _= zip(*self.memory)
+        states, actions, old_probs, rewards, next_states, dones, _, _ = zip(*batch)
+        states = torch.FloatTensor(states)
+        actions = torch.LongTensor(actions)
+        old_probs = torch.FloatTensor(old_probs)
+        rewards = torch.FloatTensor(rewards)
+        next_states = torch.FloatTensor(next_states)
+        dones = torch.FloatTensor(dones)
 
-        # Convert to numpy arrays and ensure all are correctly shaped
-        states = np.array(states)
-        states = np.array([state[0:81] for state in states])
-        actions = np.array(actions)
-        old_probs = np.array(old_probs)
-        rewards = np.array(rewards)
-        next_states = np.array(next_states)
-        next_states = np.array([state[0:81] for state in next_states])
-        dones = np.array(dones)
+        values = self.critic(states)
+        next_values = self.critic(next_states)
 
-        # Ensure old_probs is correctly shaped
-        if old_probs.shape[1] != self.action_size:
-            raise ValueError(f"Shape of old_probs should be ({self.batch_size}, {self.action_size}), but got {old_probs.shape}")
-
-        # Update critic
-        values = self.critic.predict(states)
-        next_values = self.critic.predict(next_states)
         targets = rewards + self.gamma * (1 - dones) * next_values.squeeze()
         advantages = targets - values.squeeze()
 
-        # Clip advantages
-        advantages = np.clip(advantages, -1, 1).reshape(-1, 1)
+        probs = self.actor(states, advantages, old_probs)
+        actor_loss = self.ppo_loss(probs, actions, advantages, old_probs)
 
-        # Convert actions to one-hot encoding
-        actions_one_hot = tf.keras.utils.to_categorical(actions, num_classes=self.action_size)
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward(retain_graph=True)  # Retain the graph here
+        self.actor_optimizer.step()
 
-        # Train the actor model
-        actor_history = self.actor.fit([states, advantages, old_probs], actions_one_hot, batch_size=self.batch_size, verbose=2)
-        actor_loss = self.ppo_loss(advantages, old_probs)
-        self.losses.append(actor_loss)
+        critic_loss = nn.MSELoss()(values.squeeze(), targets)
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()  # No need to retain graph here
+        self.critic_optimizer.step()
 
-        critic_history = self.critic.fit(states, targets, batch_size=self.batch_size, verbose=2)
-        critic_loss = self.ppo_loss(targets, values)
-        self.losses.append(critic_loss)
-        # Clear memory
-        self.memory.clear()
-
-
-
-
+        self.losses.append(actor_loss.item())
+        self.memory = []
 
 
     def plot_losses(self):
@@ -147,3 +122,5 @@ class PPOAgent:
         plt.xlabel('Episode')
         plt.ylabel('Loss')
         plt.show()
+
+

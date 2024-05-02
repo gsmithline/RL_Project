@@ -14,9 +14,9 @@ from ppo import PPOAgent
 info_df = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
 info_df_dqn_training = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
 episodes = 50
-generations = 100
-max_steps = 50
-runs = 10
+generations = 300
+max_steps = 100
+runs = 300
 
 first_gen = 1
 last_gen = generations
@@ -110,7 +110,7 @@ def train_agents(env, agents, episodes=2, policies=None, info_df=info_df, seed=4
             states = next_states
             steps += 1
             if all(done):
-                avg_reward.append(sum(episode_rewards)/steps/env.n_agents)
+                avg_reward.append(sum(episode_rewards)/env.n_agents)
                 break
 
 
@@ -248,7 +248,7 @@ def simulation_10_agents(seed=42, view = False):
     env = gym.make('TrafficJunction10-v0')
     agents, avg_rewards_training, avg_training_norm_violations, first_gen_results, middle_gen_results, last_gen_results = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
     print("Running Computed Policies")
-    sim_violated, at_dest = run_computed_policies_dqn(env, agents, 10, view) #nash 
+    sim_violated, at_dest = run_computed_policies_dqn(env, agents, runs, view, seed) #nash 
 
     env.close()
     return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results
@@ -267,7 +267,7 @@ def simulation_4_agents(seed=42, view = False):
     env = gym.make('TrafficJunction4-v0')
     agents, avg_rewards_training, avg_training_norm_violations, first_gen_results, middle_gen_results, last_gen_results = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
     print("Running Computed Policies")
-    sim_violated, at_dest = run_computed_policies_dqn(env, agents, 10, view) #nash 
+    sim_violated, at_dest = run_computed_policies_dqn(env, agents, runs, view, seed) #nash 
 
     env.close()
     return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results
@@ -300,7 +300,7 @@ def simulation_10_to_4_agents(seed=42, view = False):
             counter += 1
         else:
             break
-    sim_violated, at_dest = run_computed_policies_dqn(env, new_agents, 10, view) #nash 
+    sim_violated, at_dest = run_computed_policies_dqn(env, new_agents, runs, view, seed) #nash 
     print(sim_violated)
     env.close()
     return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results
