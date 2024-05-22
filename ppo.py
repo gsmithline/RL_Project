@@ -5,7 +5,9 @@ import numpy as np
 from collections import deque
 import random
 import matplotlib.pyplot as plt
-
+'''
+Proximal Policy Optimization (PPO) Agent
+'''
 class Actor(nn.Module):
     def __init__(self, state_size, action_size):
         super(Actor, self).__init__()

@@ -5,7 +5,9 @@ from collections import deque
 import random
 import matplotlib.pyplot as plt
 
-
+'''
+Deep Q-Learning Network (DQN) Agent
+'''
 class DQNAgent:
     def __init__(self, state_size, action_size=2):
         self.state_size = state_size
@@ -19,7 +21,7 @@ class DQNAgent:
         self.model = self._create()
         self.model_target = self._create()
         self.losses = []
-        self.history = None #array of tuples of actions and rewards
+        self.history = None 
         self.action = None 
         
     def _create(self):
@@ -55,22 +57,16 @@ class DQNAgent:
             state = np.array(state, dtype=np.float32).reshape(1, self.state_size)
             next_state = np.array(next_state, dtype=np.float32).reshape(1, self.state_size)
 
-            # Calculate the target value for the current state
             if not done:
-                # Calculate the future discounted reward
                 target = reward + self.gamma * np.amax(self.model.predict(next_state)[0])
             else:
-                # If the state is terminal, then the reward is the final target
                 target = reward
 
-            # Fetch the current predictions for the state and update the predictions with the target
             target_f = self.model.predict(state)
             target_f[0][action[0]] = target
 
-            # Perform a single update on the model with the target values
             history = self.model.fit(state, target_f, epochs=1, verbose=0)
             self.losses.append(history.history["loss"][0]) #
-            # Decay epsilon after each replay step
             if self.epsilon > self.epsilon_min:
                 self.epsilon *= self.epsilon_decay
 

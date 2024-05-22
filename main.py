@@ -9,13 +9,17 @@ import nashpy as nash
 from dqn import DQNAgent
 import matplotlib.pyplot as plt
 from ppo import PPOAgent
+from gym.wrappers import Monitor
 
+'''
+Hyperparameters
+'''
 
 info_df = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
 info_df_dqn_training = pd.DataFrame(columns=['Actions', 'Observations', 'Information', 'Rewards', 'Done'])
-episodes = 50
+episodes = 100
 generations = 300
-max_steps = 100
+max_steps = 200
 runs = 300
 
 first_gen = 1
@@ -24,12 +28,20 @@ middle_gen = int(generations/2)
 
 
 '''
-Policy Initialization Randomly
+name: initialize_policy
+input: num_agents, action_space_size
+output: dictionary of policies for each agent
+Description: This function initializes the policy for each agent
 '''
 def initialize_policy(num_agents, action_space_size):
     return {agent: lambda obs, size=action_space_size: np.random.randint(size) for agent in range(num_agents)}
 
-
+'''
+name: simulate_episode
+input: env, policies, generation
+output: cumulative_rewards
+Description: This function simulates an episode
+'''
 def simulate_episode(env, policies, generation):
     if generation == 0:
         obv = env.reset()
@@ -46,7 +58,12 @@ def simulate_episode(env, policies, generation):
 
     return cumulative_rewards
 
-
+'''
+name: compute_nash_equilibrium
+input: meta_game_payoffs
+output: equilibrium_policies
+Description: This function computes the Nash Equilibrium
+'''
 def compute_nash_equilibrium(meta_game_payoffs):
     equilibrium_policies = {}
     for match, payoff_matrix in meta_game_payoffs.items():
@@ -60,9 +77,18 @@ def compute_nash_equilibrium(meta_game_payoffs):
             equilibrium_policies[match] = eqs
     return equilibrium_policies
 
+'''
+name: train_agents
+input: env, agents, episodes, policies, info_df, seed
+output: avg_reward, info_df, episode_violations_cost
+Description: This function trains the agents
+'''
 def train_agents(env, agents, episodes=2, policies=None, info_df=info_df, seed=42):
     episode_rewards = []
     avg_reward = []
+    episode_violations_cost = {episode + 1 : 0 for episode in range(episodes)}
+  
+
     for episode in range(episodes):
         print(f"Episode {episode + 1}/{episodes}")
         step_collisions = 0
@@ -71,6 +97,7 @@ def train_agents(env, agents, episodes=2, policies=None, info_df=info_df, seed=4
         unncessary_brake_violations = 0
         efficient_crossing_violations = 0
         total_violations_cost = 0
+        collison_intersection = 0
 
         states = np.array(env.reset())
         done = [False] * env.n_agents
@@ -101,6 +128,8 @@ def train_agents(env, agents, episodes=2, policies=None, info_df=info_df, seed=4
             unncessary_brake_violations += info['unncessary_brake_violations']
             efficient_crossing_violations += info['efficient_crossing_violations']
             total_violations_cost += info['total_violations_cost']
+            episode_violations_cost[episode + 1] += info['total_violations_cost']
+            collison_intersection = info['Intersection Collisions']
             total_episode_reward += sum(rewards)
             episode_rewards.append(total_episode_reward)
             for i in range(env.n_agents):
@@ -111,25 +140,35 @@ def train_agents(env, agents, episodes=2, policies=None, info_df=info_df, seed=4
             steps += 1
             if all(done):
                 avg_reward.append(sum(episode_rewards)/env.n_agents)
+
                 break
 
 
-    info_df.loc[len(info_df)] = [seed, step_collisions, not_on_track, yield_violations, 
+        info_df.loc[len(info_df)] = [seed, step_collisions, not_on_track, yield_violations, 
                                     unncessary_brake_violations, efficient_crossing_violations, total_violations_cost]
     
-    return avg_reward, info_df
+    return avg_reward, info_df, episode_violations_cost 
 
 
-
+'''
+name: create_policy_from_equilibrium
+input: equilibrium, action_space_size
+output: policy
+Description: This function creates a policy from the equilibrium
+'''
 def create_policy_from_equilibrium(equilibrium, action_space_size):
-    # This function creates a policy function from a given Nash equilibrium distribution
     def policy(observation):
-        action_probabilities = equilibrium  # Assuming equilibrium is a distribution over actions
+        action_probabilities = equilibrium 
         action = np.random.choice(np.arange(action_space_size), p=action_probabilities)
         return action
     return policy
 
-
+'''
+name: psro_simulation
+input: env, generations, episodes_per_matchup, flag, seed, info_training
+output: agents, avg_episode_rewards, info_df, first_gen_results, middle_gen_results, last_gen_results, avg_episode_cost
+Description: This function runs the PSRO simulation and training
+'''
 def psro_simulation(env, generations, episodes_per_matchup, flag, seed=42, info_training=None):
     first_gen_results = []
     middle_gen_results = []
@@ -139,6 +178,7 @@ def psro_simulation(env, generations, episodes_per_matchup, flag, seed=42, info_
     agent_holder= [PPOAgent(81, action_space_size, seed) for _ in range(num_agents)] 
     agents = {}
     avg_episode_rewards = []
+    avg_episode_cost = []
     avg_info_df = pd.DataFrame(columns=['seed', 'step_collisions', 'not_on_track', 'yield_violations', 
                                           'unncessary_brake_violations', 
                                           'efficient_crossing_violations', 'total_violations_cost'])
@@ -170,27 +210,36 @@ def psro_simulation(env, generations, episodes_per_matchup, flag, seed=42, info_
                         policies[agent1] = create_policy_from_equilibrium(equilibrium[0], action_space_size)
                         policies[agent2] = create_policy_from_equilibrium(equilibrium[1], action_space_size)
             
-            #train agents
-            episode_rewards, info_df = train_agents(env, agents, episodes_per_matchup, policies, info_training, seed)
+
+            episode_rewards, info_df, episode_violations_cost = train_agents(env, agents, episodes_per_matchup, policies, info_training, seed)
+            episode_violations_cost = [episode_violations_cost.values()]
+            episode_violations_cost = episode_violations_cost[0]
+            print(info_df.shape[0])
             if generation+1 == first_gen:
-                first_gen_results.append((episode_rewards, info_df))    
+                first_gen_results.append((episode_rewards, info_df, episode_violations_cost))    
                 avg_episode_rewards = episode_rewards
+                avg_episode_cost = episode_violations_cost
             else:
 
+                avg_episode_cost = [sum(x) / 2 for x in zip(avg_episode_cost, episode_violations_cost)]
                 avg_episode_rewards = [sum(x) / 2 for x in zip(avg_episode_rewards, episode_rewards)] 
                 if generation+1 == middle_gen:
-                    middle_gen_results.append((episode_rewards, info_df))
-                if generation+1 == last_gen:
-                    last_gen_results.append((episode_rewards, info_df))
-            #avg training violations for each generation episode
+                    middle_gen_results.append((episode_rewards, info_df, episode_violations_cost))
+                elif generation+1 == last_gen:
+                    last_gen_results.append((episode_rewards, info_df, episode_violations_cost))
+            
             avg_info_df.loc[len(avg_info_df)] = info_df.mean()
 
-           
-        #plot total rewards
-
-        return agents, avg_episode_rewards, info_df, first_gen_results, middle_gen_results, last_gen_results
 
 
+        return agents, avg_episode_rewards, info_df, first_gen_results, middle_gen_results, last_gen_results, avg_episode_cost
+
+'''
+name: run_computed_policies_dqn
+input: env, agents, runs, view, seed
+output: results_violations_df, at_dest
+Description: This function runs the computed policies
+'''
 def run_computed_policies_dqn(env, agents, runs, view = False, seed=42):
     rewards_avg_round = []
     results_violations_df = pd.DataFrame(columns=['seed', 'step_collisions', 'not_on_track', 'yield_violations', 
@@ -231,10 +280,14 @@ def run_computed_policies_dqn(env, agents, runs, view = False, seed=42):
         results_violations_df.loc[len(results_violations_df)] = [seed, step_collisions, not_on_track, yield_violations, 
                                     unncessary_brake_violations, efficient_crossing_violations, total_violations_cost]
         at_dest.append(steps_to_destination)
-    #plot rewards
     return results_violations_df, at_dest
 
-
+'''
+name: simulation_10_agents
+input: seed, view
+output: avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results, avg_episode_cost
+Description: This function runs the simulation for 10 agents
+'''
 def simulation_10_agents(seed=42, view = False):
     info_training = pd.DataFrame(columns=['seed', 'step_collisions', 'not_on_track', 'yield_violations', 
                                           'unncessary_brake_violations', 
@@ -246,14 +299,21 @@ def simulation_10_agents(seed=42, view = False):
     kwargs={'max_steps': max_steps}
     )
     env = gym.make('TrafficJunction10-v0')
-    agents, avg_rewards_training, avg_training_norm_violations, first_gen_results, middle_gen_results, last_gen_results = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
+    agents, avg_rewards_training, avg_training_norm_violations, first_gen_results, middle_gen_results, last_gen_results, avg_episode_cost = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
+
     print("Running Computed Policies")
     sim_violated, at_dest = run_computed_policies_dqn(env, agents, runs, view, seed) #nash 
 
     env.close()
-    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results
+    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results, avg_episode_cost
 
 
+'''
+name: simulation_4_agents
+input: seed, view
+output: avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results, avg_episode_cost
+Description: This function runs the simulation for 4 agents
+'''
 def simulation_4_agents(seed=42, view = False):
     info_training = pd.DataFrame(columns=['seed', 'step_collisions', 'not_on_track', 'yield_violations', 
                                           'unncessary_brake_violations', 
@@ -265,15 +325,20 @@ def simulation_4_agents(seed=42, view = False):
     kwargs={'max_steps': max_steps}
     )
     env = gym.make('TrafficJunction4-v0')
-    agents, avg_rewards_training, avg_training_norm_violations, first_gen_results, middle_gen_results, last_gen_results = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
+    agents, avg_rewards_training, avg_training_norm_violations, first_gen_results, middle_gen_results, last_gen_results, avg_episode_cost = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
     print("Running Computed Policies")
     sim_violated, at_dest = run_computed_policies_dqn(env, agents, runs, view, seed) #nash 
 
     env.close()
-    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results
+    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results, avg_episode_cost
 
 
-
+'''
+name: simulation_10_to_4_agents
+input: seed, view
+output: avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results, avg_episode_cost
+Description: This function runs the simulation for 10 to 4 agents
+'''
 def simulation_10_to_4_agents(seed=42, view = False):
     info_training = pd.DataFrame(columns=['seed', 'step_collisions', 'not_on_track', 'yield_violations', 
                                           'unncessary_brake_violations', 
@@ -282,10 +347,12 @@ def simulation_10_to_4_agents(seed=42, view = False):
     gym.envs.register(
     id='TrafficJunction4-v0',
     entry_point='ma_gym.envs.traffic_junction:TrafficJunction',
-    kwargs={'max_steps': max_steps}
+    kwargs={'max_steps': max_steps}, 
+
     )
     env = gym.make('TrafficJunction10-v0')
-    agents, avg_rewards_training, avg_training_norm_violations, first_gen_results, middle_gen_results, last_gen_results= psro_simulation(env, generations, episodes, "Nash", seed, info_training)
+    agents, avg_rewards_training, avg_training_norm_violations, first_gen_results, middle_gen_results, last_gen_results, avg_episode_cost = psro_simulation(env, generations, episodes, "Nash", seed, info_training)
+
     
     env.close()
     print("Running Computed Policies")
@@ -303,27 +370,5 @@ def simulation_10_to_4_agents(seed=42, view = False):
     sim_violated, at_dest = run_computed_policies_dqn(env, new_agents, runs, view, seed) #nash 
     print(sim_violated)
     env.close()
-    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results
-
-'''
-avg_training_rewards_f, avg_training_norm_violations_f, sim_violated_f, at_dest_f = None, None, None, None
-for seed in [0, 42]:
-    avg_training_rewards, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results = simulation_4_agents(seed, False)
-    if seed == 0:
-        avg_training_rewards_f = avg_training_rewards
-        avg_training_norm_violations_f = avg_training_norm_violations
-        sim_violated_f = sim_violated
-        at_dest_f = at_dest
-    else:
-        avg_training_rewards_f = [sum(x) / 2 for x in zip(avg_training_rewards_f, avg_training_rewards)]
-
-        avg_training_norm_violations_f = avg_training_norm_violations_f.add(avg_training_norm_violations).div(2)
-        sim_violated_f = sim_violated_f.add(sim_violated).div(2)
-        at_dest_f = [sum(x) / 2 for x in zip(at_dest_f, at_dest)]
-
-print(avg_training_rewards_f)
-print(avg_training_norm_violations_f)
-print(sim_violated_f)
-print(at_dest_f)
-'''
+    return avg_rewards_training, avg_training_norm_violations, sim_violated, at_dest, first_gen_results, middle_gen_results, last_gen_results, avg_episode_cost
 
